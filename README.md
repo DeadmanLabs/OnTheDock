@@ -73,8 +73,8 @@ npm install @org/docker-control
 
 ### Basic Usage
 
-```typescript
-import { DockerControl } from '@org/docker-control';
+```javascript
+const { DockerControl } = require('@org/docker-control');
 
 // Initialize the Docker control instance
 const docker = new DockerControl({
