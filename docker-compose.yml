@@ -1,0 +1,59 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ./test/backend
+      dockerfile: Dockerfile
+    container_name: onthedock-backend
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - DOCKER_SOCKET=/var/run/docker.sock
+      - FRONTEND_URL=http://localhost:8080
+      - API_KEY=${API_KEY}
+      - ALLOWED_ORIGINS=http://localhost:8080,http://localhost:5173
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./data/backend:/app/data
+    networks:
+      - onthedock
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 40s
+
+  frontend:
+    build:
+      context: ./test/frontend
+      dockerfile: Dockerfile
+      args:
+        - VITE_API_URL=http://localhost:3000
+        - VITE_WS_URL=ws://localhost:3000
+    container_name: onthedock-frontend
+    ports:
+      - "8080:8080"
+    depends_on:
+      - backend
+    networks:
+      - onthedock
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 20s
+
+networks:
+  onthedock:
+    driver: bridge
+
+volumes:
+  backend-data:
+    driver: local

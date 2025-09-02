@@ -1,0 +1,828 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OnTheDock - Enhanced Docker Management</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css" />
+    <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js"></script>
+    <style>
+        .spinner {
+            border: 3px solid rgba(0, 0, 0, 0.1);
+            border-radius: 50%;
+            border-top: 3px solid #0db7ed;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .terminal-container {
+            background: #000;
+            padding: 10px;
+            border-radius: 8px;
+        }
+    </style>
+</head>
+<body class="bg-gray-100">
+    <div class="container mx-auto px-4 py-8">
+        <!-- Header -->
+        <div class="bg-white rounded-lg shadow-lg p-6 mb-8">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center">
+                    <div class="text-4xl mr-4">🐳</div>
+                    <div>
+                        <h1 class="text-3xl font-bold text-gray-800">OnTheDock Enhanced</h1>
+                        <p class="text-gray-600">Complete Docker Management with Files & Terminal</p>
+                    </div>
+                </div>
+                <button onclick="refreshAll()" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">
+                    🔄 Refresh
+                </button>
+            </div>
+        </div>
+
+        <!-- System Info -->
+        <div class="bg-white rounded-lg shadow-lg p-6 mb-8" id="systemInfo">
+            <h2 class="text-2xl font-bold mb-4">System Information</h2>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4" id="systemStats">
+                <div class="text-center">
+                    <div class="spinner mx-auto"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tabs -->
+        <div class="bg-white rounded-lg shadow-lg">
+            <div class="border-b border-gray-200">
+                <nav class="-mb-px flex">
+                    <button onclick="showTab('containers')" id="containersTab" class="py-2 px-6 border-b-2 border-blue-500 font-medium text-blue-600">
+                        📦 Containers
+                    </button>
+                    <button onclick="showTab('images')" id="imagesTab" class="py-2 px-6 border-b-2 border-transparent font-medium text-gray-600 hover:text-gray-800">
+                        🖼️ Images
+                    </button>
+                    <button onclick="showTab('logs')" id="logsTab" class="py-2 px-6 border-b-2 border-transparent font-medium text-gray-600 hover:text-gray-800">
+                        📋 Logs
+                    </button>
+                    <button onclick="showTab('files')" id="filesTab" class="py-2 px-6 border-b-2 border-transparent font-medium text-gray-600 hover:text-gray-800">
+                        📁 Files
+                    </button>
+                    <button onclick="showTab('terminal')" id="terminalTab" class="py-2 px-6 border-b-2 border-transparent font-medium text-gray-600 hover:text-gray-800">
+                        💻 Terminal
+                    </button>
+                </nav>
+            </div>
+
+            <!-- Containers Tab -->
+            <div id="containersContent" class="p-6">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-2xl font-bold">Containers</h2>
+                    <button onclick="showCreateContainer()" class="bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded">
+                        ➕ Create Container
+                    </button>
+                </div>
+                <div id="containersList">
+                    <div class="text-center">
+                        <div class="spinner mx-auto"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Images Tab -->
+            <div id="imagesContent" class="p-6 hidden">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-2xl font-bold">Images</h2>
+                    <button onclick="showPullImage()" class="bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded">
+                        ⬇️ Pull Image
+                    </button>
+                </div>
+                <div id="imagesList">
+                    <div class="text-center">
+                        <div class="spinner mx-auto"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Logs Tab -->
+            <div id="logsContent" class="p-6 hidden">
+                <h2 class="text-2xl font-bold mb-4">Container Logs</h2>
+                <select id="logContainerSelect" class="mb-4 p-2 border rounded" onchange="loadLogs()">
+                    <option value="">Select a container...</option>
+                </select>
+                <div id="logsOutput" class="bg-gray-900 text-green-400 p-4 rounded h-96 overflow-y-auto font-mono text-sm">
+                    Select a container to view logs
+                </div>
+            </div>
+
+            <!-- Files Tab -->
+            <div id="filesContent" class="p-6 hidden">
+                <h2 class="text-2xl font-bold mb-4">Container Files</h2>
+                <div class="mb-4">
+                    <select id="fileContainerSelect" class="p-2 border rounded mr-2" onchange="loadFiles('/')">
+                        <option value="">Select a container...</option>
+                    </select>
+                    <span id="currentPath" class="text-gray-600">/</span>
+                </div>
+                <div id="filesOutput" class="border rounded p-4">
+                    <p class="text-gray-500">Select a container to browse files</p>
+                </div>
+                <div class="mt-4">
+                    <input type="file" id="fileUpload" class="hidden" onchange="uploadFile()">
+                    <button onclick="document.getElementById('fileUpload').click()" class="bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded">
+                        📤 Upload File
+                    </button>
+                </div>
+            </div>
+
+            <!-- Terminal Tab -->
+            <div id="terminalContent" class="p-6 hidden">
+                <h2 class="text-2xl font-bold mb-4">Interactive Terminal</h2>
+                <div class="mb-4">
+                    <select id="terminalContainerSelect" class="p-2 border rounded mr-2">
+                        <option value="">Select a container...</option>
+                    </select>
+                    <button onclick="connectTerminal()" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">
+                        🔌 Connect
+                    </button>
+                    <button onclick="disconnectTerminal()" class="bg-red-500 hover:bg-red-700 text-white font-bold py-2 px-4 rounded ml-2">
+                        ❌ Disconnect
+                    </button>
+                </div>
+                <div class="terminal-container">
+                    <div id="terminal" style="height: 400px;"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Create Container Modal -->
+    <div id="createContainerModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 hidden z-50">
+        <div class="flex items-center justify-center min-h-screen px-4">
+            <div class="bg-white rounded-lg overflow-hidden shadow-xl max-w-2xl w-full">
+                <div class="px-6 py-4 bg-gray-50 border-b">
+                    <h3 class="text-lg font-bold">Create New Container</h3>
+                </div>
+                <div class="p-6">
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Image *</label>
+                        <input type="text" id="createImage" placeholder="e.g., nginx:latest" class="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    </div>
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Container Name</label>
+                        <input type="text" id="createName" placeholder="e.g., my-nginx" class="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    </div>
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Port Mappings (one per line)</label>
+                        <textarea id="createPorts" placeholder="8080:80
+3000:3000" rows="3" class="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"></textarea>
+                    </div>
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Environment Variables (KEY=VALUE, one per line)</label>
+                        <textarea id="createEnv" placeholder="NODE_ENV=production
+DATABASE_URL=postgres://..." rows="3" class="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"></textarea>
+                    </div>
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Volume Mappings (one per line)</label>
+                        <textarea id="createVolumes" placeholder="/host/path:/container/path
+./data:/data" rows="3" class="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"></textarea>
+                    </div>
+                </div>
+                <div class="px-6 py-4 bg-gray-50 border-t flex justify-end space-x-2">
+                    <button onclick="hideCreateContainer()" class="px-4 py-2 bg-gray-300 text-gray-700 rounded hover:bg-gray-400">Cancel</button>
+                    <button onclick="createContainer()" class="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600">Create</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Pull Image Modal -->
+    <div id="pullImageModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 hidden z-50">
+        <div class="flex items-center justify-center min-h-screen px-4">
+            <div class="bg-white rounded-lg overflow-hidden shadow-xl max-w-lg w-full">
+                <div class="px-6 py-4 bg-gray-50 border-b">
+                    <h3 class="text-lg font-bold">Pull Docker Image</h3>
+                </div>
+                <div class="p-6">
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Image Name *</label>
+                        <input type="text" id="pullImageName" placeholder="e.g., nginx:latest, ubuntu:22.04" class="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    </div>
+                    <div id="pullProgress" class="hidden">
+                        <div class="text-sm text-gray-600 mb-2">Pulling image...</div>
+                        <div class="w-full bg-gray-200 rounded-full h-2">
+                            <div class="bg-blue-600 h-2 rounded-full" style="width: 0%" id="pullProgressBar"></div>
+                        </div>
+                        <div id="pullStatus" class="mt-2 text-xs text-gray-500 font-mono max-h-32 overflow-y-auto"></div>
+                    </div>
+                </div>
+                <div class="px-6 py-4 bg-gray-50 border-t flex justify-end space-x-2">
+                    <button onclick="hidePullImage()" class="px-4 py-2 bg-gray-300 text-gray-700 rounded hover:bg-gray-400">Cancel</button>
+                    <button onclick="pullImage()" id="pullImageBtn" class="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600">Pull</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_URL = 'http://localhost:3001/api';
+        let currentTab = 'containers';
+        let allContainers = [];
+        let currentPath = '/';
+        let socket = null;
+        let term = null;
+        let terminalConnected = false;
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            refreshAll();
+            setInterval(refreshCurrent, 5000);
+            initTerminal();
+            initSocket();
+        });
+
+        function initSocket() {
+            socket = io('http://localhost:3001');
+            
+            socket.on('connect', () => {
+                console.log('WebSocket connected');
+            });
+            
+            socket.on('terminal:connected', (data) => {
+                terminalConnected = true;
+                term.writeln('\r\n\x1b[32mConnected to container terminal\x1b[0m\r\n');
+            });
+            
+            socket.on('terminal:data', (data) => {
+                if (term) {
+                    term.write(data);
+                }
+            });
+            
+            socket.on('terminal:error', (data) => {
+                if (term) {
+                    term.writeln(`\r\n\x1b[31mError: ${data.error}\x1b[0m\r\n`);
+                }
+                terminalConnected = false;
+            });
+            
+            socket.on('terminal:exit', () => {
+                if (term) {
+                    term.writeln('\r\n\x1b[33mTerminal session ended\x1b[0m\r\n');
+                }
+                terminalConnected = false;
+            });
+        }
+
+        function initTerminal() {
+            term = new Terminal({
+                cursorBlink: true,
+                fontSize: 14,
+                fontFamily: 'Menlo, Monaco, "Courier New", monospace',
+                theme: {
+                    background: '#000000',
+                    foreground: '#00ff00'
+                }
+            });
+            
+            term.open(document.getElementById('terminal'));
+            
+            term.onData((data) => {
+                if (socket && terminalConnected) {
+                    socket.emit('terminal:input', data);
+                }
+            });
+            
+            term.onResize(({ cols, rows }) => {
+                if (socket && terminalConnected) {
+                    socket.emit('terminal:resize', { cols, rows });
+                }
+            });
+        }
+
+        function connectTerminal() {
+            const containerId = document.getElementById('terminalContainerSelect').value;
+            if (!containerId) {
+                alert('Please select a container');
+                return;
+            }
+            
+            if (socket) {
+                term.clear();
+                term.writeln('Connecting to container...');
+                socket.emit('terminal:create', { containerId });
+            }
+        }
+
+        function disconnectTerminal() {
+            if (socket && terminalConnected) {
+                socket.disconnect();
+                socket.connect();
+                terminalConnected = false;
+                term.writeln('\r\n\x1b[33mDisconnected\x1b[0m\r\n');
+            }
+        }
+
+        async function refreshAll() {
+            await loadSystemInfo();
+            await loadContainers();
+            await loadImages();
+        }
+
+        function refreshCurrent() {
+            if (currentTab === 'containers') loadContainers();
+            else if (currentTab === 'images') loadImages();
+            loadSystemInfo();
+        }
+
+        function showTab(tab) {
+            currentTab = tab;
+            
+            // Update tab styles
+            document.querySelectorAll('nav button').forEach(btn => {
+                btn.classList.remove('border-blue-500', 'text-blue-600');
+                btn.classList.add('border-transparent', 'text-gray-600');
+            });
+            document.getElementById(tab + 'Tab').classList.remove('border-transparent', 'text-gray-600');
+            document.getElementById(tab + 'Tab').classList.add('border-blue-500', 'text-blue-600');
+            
+            // Show/hide content
+            document.querySelectorAll('[id$="Content"]').forEach(content => {
+                content.classList.add('hidden');
+            });
+            document.getElementById(tab + 'Content').classList.remove('hidden');
+        }
+
+        async function loadSystemInfo() {
+            try {
+                const response = await axios.get(`${API_URL}/info`);
+                const info = response.data;
+                
+                document.getElementById('systemStats').innerHTML = `
+                    <div class="bg-blue-50 p-4 rounded">
+                        <div class="text-3xl font-bold text-blue-600">${info.containers}</div>
+                        <div class="text-gray-600">Total Containers</div>
+                        <div class="text-sm text-gray-500">${info.containersRunning} running</div>
+                    </div>
+                    <div class="bg-green-50 p-4 rounded">
+                        <div class="text-3xl font-bold text-green-600">${info.images}</div>
+                        <div class="text-gray-600">Images</div>
+                        <div class="text-sm text-gray-500">Available locally</div>
+                    </div>
+                    <div class="bg-purple-50 p-4 rounded">
+                        <div class="text-3xl font-bold text-purple-600">${info.cpus}</div>
+                        <div class="text-gray-600">CPUs</div>
+                        <div class="text-sm text-gray-500">${formatBytes(info.memTotal)} RAM</div>
+                    </div>
+                `;
+            } catch (error) {
+                console.error('Failed to load system info:', error);
+            }
+        }
+
+        async function loadContainers() {
+            try {
+                const response = await axios.get(`${API_URL}/containers`);
+                allContainers = response.data;
+                
+                // Update selects
+                updateContainerSelects();
+                
+                // Display containers
+                if (allContainers.length === 0) {
+                    document.getElementById('containersList').innerHTML = '<p class="text-gray-500">No containers found</p>';
+                    return;
+                }
+                
+                document.getElementById('containersList').innerHTML = `
+                    <div class="overflow-x-auto">
+                        <table class="min-w-full">
+                            <thead>
+                                <tr class="bg-gray-50">
+                                    <th class="px-4 py-2 text-left">Status</th>
+                                    <th class="px-4 py-2 text-left">Name</th>
+                                    <th class="px-4 py-2 text-left">Image</th>
+                                    <th class="px-4 py-2 text-left">Created</th>
+                                    <th class="px-4 py-2 text-left">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${allContainers.map(container => `
+                                    <tr class="border-t">
+                                        <td class="px-4 py-2">
+                                            <span class="inline-block w-3 h-3 rounded-full ${getStatusColor(container.state)}"></span>
+                                            <span class="ml-2 text-sm">${container.state}</span>
+                                        </td>
+                                        <td class="px-4 py-2 font-medium">${container.name}</td>
+                                        <td class="px-4 py-2 text-sm">${container.image}</td>
+                                        <td class="px-4 py-2 text-sm">${new Date(container.created * 1000).toLocaleDateString()}</td>
+                                        <td class="px-4 py-2">
+                                            ${getContainerActions(container)}
+                                        </td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                `;
+            } catch (error) {
+                console.error('Failed to load containers:', error);
+            }
+        }
+
+        function updateContainerSelects() {
+            const selects = ['logContainerSelect', 'fileContainerSelect', 'terminalContainerSelect'];
+            
+            selects.forEach(selectId => {
+                const select = document.getElementById(selectId);
+                const currentValue = select.value;
+                select.innerHTML = '<option value="">Select a container...</option>';
+                
+                allContainers.filter(c => c.state === 'running').forEach(container => {
+                    const option = document.createElement('option');
+                    option.value = container.id;
+                    option.textContent = container.name;
+                    select.appendChild(option);
+                });
+                
+                select.value = currentValue;
+            });
+        }
+
+        async function loadImages() {
+            try {
+                const response = await axios.get(`${API_URL}/images`);
+                const images = response.data;
+                
+                if (images.length === 0) {
+                    document.getElementById('imagesList').innerHTML = '<p class="text-gray-500">No images found</p>';
+                    return;
+                }
+                
+                document.getElementById('imagesList').innerHTML = `
+                    <div class="overflow-x-auto">
+                        <table class="min-w-full">
+                            <thead>
+                                <tr class="bg-gray-50">
+                                    <th class="px-4 py-2 text-left">Repository</th>
+                                    <th class="px-4 py-2 text-left">Tag</th>
+                                    <th class="px-4 py-2 text-left">Image ID</th>
+                                    <th class="px-4 py-2 text-left">Size</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${images.map(image => {
+                                    const tags = image.tags.filter(t => t !== '<none>:<none>');
+                                    if (tags.length === 0) tags.push('<none>');
+                                    
+                                    return tags.map(tag => {
+                                        const [repo, version] = tag.includes(':') ? tag.split(':') : [tag, '<none>'];
+                                        return `
+                                            <tr class="border-t">
+                                                <td class="px-4 py-2 font-medium">${repo}</td>
+                                                <td class="px-4 py-2">
+                                                    <span class="px-2 py-1 bg-gray-100 rounded text-sm">${version}</span>
+                                                </td>
+                                                <td class="px-4 py-2 text-sm font-mono">${image.id.substring(7, 19)}</td>
+                                                <td class="px-4 py-2 text-sm">${formatBytes(image.size)}</td>
+                                            </tr>
+                                        `;
+                                    }).join('');
+                                }).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                `;
+            } catch (error) {
+                console.error('Failed to load images:', error);
+            }
+        }
+
+        async function loadLogs() {
+            const containerId = document.getElementById('logContainerSelect').value;
+            if (!containerId) {
+                document.getElementById('logsOutput').innerHTML = 'Select a container to view logs';
+                return;
+            }
+            
+            try {
+                const response = await axios.get(`${API_URL}/containers/${containerId}/logs`);
+                const logs = response.data;
+                document.getElementById('logsOutput').innerHTML = `<pre>${escapeHtml(logs)}</pre>`;
+                document.getElementById('logsOutput').scrollTop = document.getElementById('logsOutput').scrollHeight;
+            } catch (error) {
+                document.getElementById('logsOutput').innerHTML = `<span class="text-red-400">Failed to load logs: ${error.message}</span>`;
+            }
+        }
+
+        async function loadFiles(path) {
+            const containerId = document.getElementById('fileContainerSelect').value;
+            if (!containerId) {
+                document.getElementById('filesOutput').innerHTML = '<p class="text-gray-500">Select a container to browse files</p>';
+                return;
+            }
+            
+            currentPath = path;
+            document.getElementById('currentPath').textContent = currentPath;
+            
+            try {
+                const response = await axios.get(`${API_URL}/containers/${containerId}/files`, {
+                    params: { path: currentPath }
+                });
+                
+                const files = response.data.files;
+                
+                let html = '<table class="min-w-full"><thead><tr class="bg-gray-50">';
+                html += '<th class="px-4 py-2 text-left">Name</th>';
+                html += '<th class="px-4 py-2 text-left">Size</th>';
+                html += '<th class="px-4 py-2 text-left">Permissions</th>';
+                html += '<th class="px-4 py-2 text-left">Actions</th>';
+                html += '</tr></thead><tbody>';
+                
+                if (currentPath !== '/') {
+                    html += `<tr class="border-t cursor-pointer hover:bg-gray-50" onclick="loadFiles('${path.split('/').slice(0, -1).join('/') || '/'}')">`;
+                    html += '<td class="px-4 py-2">📁 ..</td>';
+                    html += '<td colspan="3"></td></tr>';
+                }
+                
+                files.forEach(file => {
+                    html += '<tr class="border-t">';
+                    if (file.isDirectory) {
+                        html += `<td class="px-4 py-2 cursor-pointer hover:text-blue-600" onclick="loadFiles('${file.path}')">📁 ${file.name}</td>`;
+                    } else {
+                        html += `<td class="px-4 py-2">📄 ${file.name}</td>`;
+                    }
+                    html += `<td class="px-4 py-2 text-sm">${file.isDirectory ? '-' : formatBytes(file.size)}</td>`;
+                    html += `<td class="px-4 py-2 text-sm font-mono">${file.permissions}</td>`;
+                    html += '<td class="px-4 py-2">';
+                    if (!file.isDirectory) {
+                        html += `<button onclick="downloadFile('${file.path}')" class="text-blue-600 hover:underline">Download</button>`;
+                    }
+                    html += '</td></tr>';
+                });
+                
+                html += '</tbody></table>';
+                document.getElementById('filesOutput').innerHTML = html;
+            } catch (error) {
+                document.getElementById('filesOutput').innerHTML = `<p class="text-red-500">Failed to load files: ${error.message}</p>`;
+            }
+        }
+
+        async function downloadFile(filepath) {
+            const containerId = document.getElementById('fileContainerSelect').value;
+            if (!containerId) return;
+            
+            try {
+                const response = await axios.get(`${API_URL}/containers/${containerId}/download`, {
+                    params: { path: filepath }
+                });
+                
+                const blob = new Blob([response.data], { type: 'text/plain' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = filepath.split('/').pop();
+                a.click();
+                URL.revokeObjectURL(url);
+            } catch (error) {
+                alert('Failed to download file: ' + error.message);
+            }
+        }
+
+        async function uploadFile() {
+            const containerId = document.getElementById('fileContainerSelect').value;
+            if (!containerId) {
+                alert('Please select a container first');
+                return;
+            }
+            
+            const fileInput = document.getElementById('fileUpload');
+            const file = fileInput.files[0];
+            if (!file) return;
+            
+            const formData = new FormData();
+            formData.append('file', file);
+            formData.append('path', currentPath);
+            
+            try {
+                await axios.post(`${API_URL}/containers/${containerId}/upload`, formData, {
+                    headers: { 'Content-Type': 'multipart/form-data' }
+                });
+                alert('File uploaded successfully');
+                loadFiles(currentPath);
+            } catch (error) {
+                alert('Failed to upload file: ' + error.message);
+            }
+            
+            fileInput.value = '';
+        }
+
+        function getStatusColor(state) {
+            switch(state) {
+                case 'running': return 'bg-green-500';
+                case 'paused': return 'bg-yellow-500';
+                case 'exited': return 'bg-gray-500';
+                default: return 'bg-gray-400';
+            }
+        }
+
+        function getContainerActions(container) {
+            const actions = [];
+            
+            if (container.state === 'running') {
+                actions.push(`<button onclick="stopContainer('${container.id}')" class="px-2 py-1 bg-red-500 text-white rounded text-sm hover:bg-red-600">Stop</button>`);
+            } else {
+                actions.push(`<button onclick="startContainer('${container.id}')" class="px-2 py-1 bg-green-500 text-white rounded text-sm hover:bg-green-600">Start</button>`);
+            }
+            
+            return actions.join(' ');
+        }
+
+        async function startContainer(id) {
+            try {
+                await axios.post(`${API_URL}/containers/${id}/start`);
+                await loadContainers();
+            } catch (error) {
+                alert('Failed to start container: ' + error.message);
+            }
+        }
+
+        async function stopContainer(id) {
+            try {
+                await axios.post(`${API_URL}/containers/${id}/stop`);
+                await loadContainers();
+            } catch (error) {
+                alert('Failed to stop container: ' + error.message);
+            }
+        }
+
+        function formatBytes(bytes) {
+            const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+            if (bytes === 0) return '0 B';
+            const i = Math.floor(Math.log(bytes) / Math.log(1024));
+            return Math.round(bytes / Math.pow(1024, i) * 100) / 100 + ' ' + sizes[i];
+        }
+
+        function escapeHtml(text) {
+            const map = {
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#039;'
+            };
+            return text.replace(/[&<>"']/g, m => map[m]);
+        }
+
+        // Create Container Modal Functions
+        function showCreateContainer() {
+            document.getElementById('createContainerModal').classList.remove('hidden');
+        }
+
+        function hideCreateContainer() {
+            document.getElementById('createContainerModal').classList.add('hidden');
+            // Clear form
+            document.getElementById('createImage').value = '';
+            document.getElementById('createName').value = '';
+            document.getElementById('createPorts').value = '';
+            document.getElementById('createEnv').value = '';
+            document.getElementById('createVolumes').value = '';
+        }
+
+        async function createContainer() {
+            const image = document.getElementById('createImage').value.trim();
+            if (!image) {
+                alert('Image name is required');
+                return;
+            }
+
+            const name = document.getElementById('createName').value.trim();
+            const ports = document.getElementById('createPorts').value.trim()
+                .split('\n')
+                .filter(p => p)
+                .map(p => p.trim());
+            
+            const envLines = document.getElementById('createEnv').value.trim()
+                .split('\n')
+                .filter(e => e && e.includes('='));
+            const env = {};
+            envLines.forEach(line => {
+                const [key, ...valueParts] = line.split('=');
+                env[key.trim()] = valueParts.join('=').trim();
+            });
+
+            const volumes = document.getElementById('createVolumes').value.trim()
+                .split('\n')
+                .filter(v => v && v.includes(':'))
+                .map(v => v.trim());
+
+            try {
+                const response = await axios.post(`${API_URL}/containers/create`, {
+                    image,
+                    name: name || undefined,
+                    ports: ports.length > 0 ? ports : undefined,
+                    env: Object.keys(env).length > 0 ? env : undefined,
+                    volumes: volumes.length > 0 ? volumes : undefined
+                });
+
+                if (response.data.success) {
+                    hideCreateContainer();
+                    await loadContainers();
+                    alert('Container created successfully!');
+                }
+            } catch (error) {
+                alert('Failed to create container: ' + (error.response?.data?.error || error.message));
+            }
+        }
+
+        // Pull Image Modal Functions
+        function showPullImage() {
+            document.getElementById('pullImageModal').classList.remove('hidden');
+        }
+
+        function hidePullImage() {
+            document.getElementById('pullImageModal').classList.add('hidden');
+            document.getElementById('pullImageName').value = '';
+            document.getElementById('pullProgress').classList.add('hidden');
+            document.getElementById('pullStatus').innerHTML = '';
+            document.getElementById('pullProgressBar').style.width = '0%';
+            document.getElementById('pullImageBtn').disabled = false;
+        }
+
+        async function pullImage() {
+            const imageName = document.getElementById('pullImageName').value.trim();
+            if (!imageName) {
+                alert('Image name is required');
+                return;
+            }
+
+            document.getElementById('pullProgress').classList.remove('hidden');
+            document.getElementById('pullImageBtn').disabled = true;
+            document.getElementById('pullStatus').innerHTML = '';
+
+            try {
+                const response = await fetch(`${API_URL}/images/pull`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ image: imageName })
+                });
+
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    buffer += decoder.decode(value, { stream: true });
+                    const lines = buffer.split('\n');
+                    buffer = lines.pop() || '';
+
+                    for (const line of lines) {
+                        if (line.startsWith('data: ')) {
+                            try {
+                                const data = JSON.parse(line.slice(6));
+                                if (data.error) {
+                                    throw new Error(data.error);
+                                }
+                                if (data.success) {
+                                    document.getElementById('pullProgressBar').style.width = '100%';
+                                    setTimeout(() => {
+                                        hidePullImage();
+                                        loadImages();
+                                        alert('Image pulled successfully!');
+                                    }, 500);
+                                } else if (data.status) {
+                                    const statusDiv = document.getElementById('pullStatus');
+                                    statusDiv.innerHTML += `<div>${data.status}${data.progress ? ': ' + data.progress : ''}</div>`;
+                                    statusDiv.scrollTop = statusDiv.scrollHeight;
+                                    
+                                    // Update progress bar based on layer completion
+                                    if (data.progressDetail && data.progressDetail.total) {
+                                        const percent = (data.progressDetail.current / data.progressDetail.total) * 100;
+                                        document.getElementById('pullProgressBar').style.width = percent + '%';
+                                    }
+                                }
+                            } catch (e) {
+                                console.error('Error parsing SSE data:', e);
+                            }
+                        }
+                    }
+                }
+            } catch (error) {
+                alert('Failed to pull image: ' + error.message);
+                document.getElementById('pullImageBtn').disabled = false;
+                document.getElementById('pullProgress').classList.add('hidden');
+            }
+        }
+    </script>
+</body>
+</html>

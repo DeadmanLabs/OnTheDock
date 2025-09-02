@@ -1,0 +1,59 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ./test/backend
+      dockerfile: Dockerfile.dev
+    container_name: onthedock-backend-dev
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=development
+      - PORT=3000
+      - DOCKER_SOCKET=/var/run/docker.sock
+      - FRONTEND_URL=http://localhost:5173
+      - DEBUG=true
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./test/backend/src:/app/src
+      - ./test/backend/package.json:/app/package.json
+      - ./packages/docker-control:/packages/docker-control
+      - backend-node-modules:/app/node_modules
+    networks:
+      - onthedock-dev
+    command: npm run dev
+
+  frontend:
+    build:
+      context: ./test/frontend
+      dockerfile: Dockerfile.dev
+    container_name: onthedock-frontend-dev
+    ports:
+      - "5173:5173"
+    environment:
+      - NODE_ENV=development
+      - VITE_API_URL=http://localhost:3000
+      - VITE_WS_URL=ws://localhost:3000
+    volumes:
+      - ./test/frontend/src:/app/src
+      - ./test/frontend/public:/app/public
+      - ./test/frontend/index.html:/app/index.html
+      - ./test/frontend/package.json:/app/package.json
+      - ./test/frontend/vite.config.ts:/app/vite.config.ts
+      - ./test/frontend/tailwind.config.js:/app/tailwind.config.js
+      - ./test/frontend/postcss.config.js:/app/postcss.config.js
+      - frontend-node-modules:/app/node_modules
+    networks:
+      - onthedock-dev
+    command: npm run dev -- --host
+
+networks:
+  onthedock-dev:
+    driver: bridge
+
+volumes:
+  backend-node-modules:
+    driver: local
+  frontend-node-modules:
+    driver: local
